@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>God Code Analyzer</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 30px;
+      background: #f2f2f2;
+      color: #333;
+    }
+    h1 {
+      color: #444;
+    }
+    input, button {
+      margin-top: 10px;
+      padding: 10px;
+      font-size: 16px;
+    }
+    #output {
+      margin-top: 30px;
+      white-space: pre-wrap;
+      background: white;
+      padding: 20px;
+      border: 1px solid #ccc;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>God Code Analyzer</h1>
+  <p>Upload an image, PDF, or text file to scan for encoded patterns.</p>
+  <input type="file" id="fileInput" accept=".txt,.pdf,image/*" />
+  <br/>
+  <button onclick="processFile()">Scan File</button>
+
+  <div id="output"></div>
+
+  <!-- Dependencies -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2/dist/tesseract.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+
+  <script>
+    async function processFile() {
+      const file = document.getElementById("fileInput").files[0];
+      const output = document.getElementById("output");
+      output.textContent = "Processing...";
+
+      if (!file) {
+        alert("Please upload a file.");
+        return;
+      }
+
+      let text = "";
+
+      try {
+        if (file.type.startsWith("image/")) {
+          const result = await Tesseract.recognize(file, 'eng');
+          text = result.data.text;
+        } else if (file.type === "application/pdf") {
+          const bytes = await file.arrayBuffer();
+          const pdfDoc = await PDFLib.PDFDocument.load(bytes);
+          const pages = pdfDoc.getPages();
+          for (const page of pages) {
+            const textContent = await page.getTextContent();
+            text += textContent.items.map(item => item.str).join(" ");
+          }
+        } else if (file.type === "text/plain") {
+          text = await file.text();
+        } else {
+          output.textContent = "Unsupported file type.";
+          return;
+        }
+
+        const rawText = text.replace(/\s+/g, ' ').trim();
+        const cleaned = rawText.replace(/[^a-zA-Z]/g, "").toLowerCase();
+        const translated = await translateIfNeeded(cleaned);
+        const directMatches = findPatterns(translated);
+        const skipMatches = findSkipPatterns(translated, ["god", "truth", "light", "matrix", "code", "divine"]);
+        const probability = estimateProbability([...directMatches, ...skipMatches.map(p => p.word)]);
+
+        output.textContent = `
+Original or Translated Text:
+${rawText}
+
+Direct Word Matches:
+${directMatches.join(", ") || "None"}
+
+Skip Code Matches:
+${skipMatches.map(p => `${p.word} (skip=${p.skip})`).join(", ") || "None"}
+
+Estimated Probability of Randomness: ${probability}%
+        `;
+      } catch (err) {
+        output.textContent = "Error processing file: " + err.message;
+      }
+    }
+
+    async function translateIfNeeded(text) {
+      const lang = await detectLanguage(text);
+      if (lang !== "en") {
+        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${lang}|en`);
+        const json = await res.json();
+        return json.responseData.translatedText.replace(/[^a-zA-Z]/g, "").toLowerCase();
+      }
+      return text;
+    }
+
+    async function detectLanguage(text) {
+      const res = await fetch(`https://libretranslate.com/detect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ q: text })
+      });
+      const json = await res.json();
+      return json[0]?.language || "en";
+    }
+
+    function findPatterns(text) {
+      const matches = [];
+      const watchWords = ["god", "light", "truth", "matrix", "code", "divine"];
+      for (const word of watchWords) {
+        if (text.includes(word)) matches.push(word);
+      }
+      return matches;
+    }
+
+    function findSkipPatterns(text, words, maxSkip = 20) {
+      const results = [];
+      for (let skip = 2; skip <= maxSkip; skip++) {
+        for (let offset = 0; offset < skip; offset++) {
+          let sequence = "";
+          for (let i = offset; i < text.length; i += skip) {
+            sequence += text[i];
+          }
+          for (const word of words) {
+            if (sequence.includes(word)) {
+              results.push({ word, skip });
+            }
+          }
+        }
+      }
+      return results;
+    }
+
+    function estimateProbability(patterns) {
+      const count = patterns.length;
+      return count === 0 ? 99.9 : (100 - Math.min(99, count * 7)).toFixed(2);
+    }
+  </script>
+</body>
+</html>
